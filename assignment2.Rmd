@@ -1,7 +1,7 @@
 ---
 title: "Data analysis assignment 2"
-author: "[add your name here]"
-date: "[add date here]"
+author: "Emily Sullivan"
+date: "10/02/2020"
 output: github_document
 ---
 
@@ -24,9 +24,9 @@ We will work with three different tables: household roster from wave 8 (*h_egoal
 ```{r}
 library(tidyverse)
 # You need to complete the paths to these files on your computer.
-Egoalt8 <- read_tsv("...h_egoalt.tab")
-Stable <- read_tsv("...xwavedat.tab")
-Hh8 <- read_tsv("...h_hhresp.tab")
+Stable <- read_tsv("/Users/emilysullivan/Lab sessions/UKDA-6614-tab/tab/ukhls_wx/xwavedat.tab")
+Egoalt8 <- read_tsv("/Users/emilysullivan/Lab sessions/UKDA-6614-tab/tab/ukhls_w8/h_egoalt.tab")
+Hh8 <- read_tsv("/Users/emilysullivan/Lab sessions/UKDA-6614-tab/tab/ukhls_w8/h_hhresp.tab")
 ```
 
 ## Filter household roster data (10 points)
@@ -37,8 +37,8 @@ First we want to select only pairs of individuals who are husbands and wives or 
 
 ```{r}
 Partners8 <- Egoalt8 %>%
-        filter(...) %>%
-        select(...)
+        filter(h_relationship_dv >0, h_relationship_dv < 3) %>%
+        select(pidp, apidp, h_hidp, h_relationship_dv, h_sex, h_asex)
 ```
 
 Each couple now appears in the data twice: 1) with one partner as ego and the other as alter, 2) the other way round. Now we will only focus on heterosexual couples, and keep one observation per couple with women as egos and men as their alters.
@@ -46,9 +46,9 @@ Each couple now appears in the data twice: 1) with one partner as ego and the ot
 ```{r}
 Hetero8 <- Partners8 %>%
         # filter out same-sex couples
-        filter(...) %>%
+        filter(h_sex != h_asex) %>%
         # keep only one observation per couple with women as egos
-        filter(...)
+        filter(h_sex == 2)
 ```
 
 ## Recode data on ethnicity (10 points)
@@ -57,7 +57,7 @@ In this assignment we will explore ethnic endogamy, i.e. marriages and partnersh
 
 ```{r}
 Stable2 <- Stable %>%
-        select(...)
+        select(pidp, racel_dv)
 ```
 
 Let's code missing values on ethnicity (-9) as NA.
@@ -71,16 +71,19 @@ Now let us recode the variable on ethnicity into a new binary variable with the 
 
 ```{r}
 Stable2 <- Stable2 %>%
-        mutate(race = ...)
+        mutate(race = case_when(
+          between(racel_dv, 1, 4) ~ "White",
+          racel_dv > 4 ~ "non-White"
+        ))
 ```
 
 ## Join data (30 points)
-
+https://www.understandingsociety.ac.uk/documentation/mainstage/dataset-documentation
 Now we want to join data from the household roster (*Hetero8*) and the data table with ethnicity (*Stable2*). First let us merge in the data on ego's ethnicity. We want to keep all the observations we have in *Hetero8*, but we don't want to add any other individuals from *Stable2*.
 
 ```{r}
 JoinedEthn <- Hetero8 %>%
-        ...
+        inner_join(Stable2, by = "pidp") 
 ```
 
 Let us rename the variables for ethnicity to clearly indicate that they refer to egos.
@@ -95,7 +98,7 @@ Now let us merge in the data on alter's ethnicity. Note that in this case the ke
 
 ```{r}
 JoinedEthn <- JoinedEthn %>%
-        ...
+        left_join(Stable2,by = c("apidp" = "pidp"))
 ```
 
 Renaming the variables for alters.
@@ -113,8 +116,8 @@ Let us start by looking at the joint distribution of race (White vs. non-White) 
 ```{r}
 TableRace <- JoinedEthn %>%
         # filter out observations with missing data
-        filter(...) %>%
-        count(...)
+        filter(egoRace != "NA_character_" & alterRace != "NA_character_") %>%
+        count(egoRace, alterRace)
 TableRace
 ```
 
@@ -126,11 +129,12 @@ Of course, you can simply calculate these numbers manually. However, the code wi
 ```{r}
 TableRace %>%
         # group by ego's race to calculate sums
-        group_by(...) %>%
+        group_by(egoRace) %>%
         # create a new variable with the total number of women by race
-        mutate(...) %>%
+        mutate(sumW = sum(n)
+        ) %>%
         # create a new variable with the required probabilities 
-        mutate(...)
+        mutate(perc = n / sum(n) * 100)
 ```
 
 ## Join with household data and calculate mean and median number of children by ethnic group (30 points)
@@ -141,4 +145,34 @@ TableRace %>%
 4) Write a short interpretation of your results. What could affect your findings?
 
 ```{r}
-...
+## 1
+joined1 <- JoinedEthn %>%
+  full_join(Hh8, by = "h_hidp") %>%
+  select(pidp, apidp, h_hidp, h_relationship_dv, h_sex, h_asex, egoRacel_dv, egoRace, alterRacel_dv, alterRace, h_nkids_dv)
+
+## 2
+ethnendo <- joined1 %>% 
+  filter(egoRacel_dv == 1 & alterRacel_dv == 1 | egoRacel_dv == 9 & alterRacel_dv == 9 | egoRacel_dv == 10 & alterRacel_dv == 10) %>%
+  mutate(ethnendocouples = case_when(
+    egoRacel_dv == 1 & alterRacel_dv == 1 ~ "White British",
+    egoRacel_dv == 9 & alterRacel_dv == 9 ~ "Indian",
+    egoRacel_dv == 10 & alterRacel_dv == 10 ~ "Pakistani"
+  ))
+
+## 3
+Aggr1 <- ethnendo %>%
+  select(h_nkids_dv, ethnendocouples) %>%
+  group_by(ethnendocouples) %>%
+  summarise(
+    meankids = mean(h_nkids_dv, na.rm = TRUE),
+    mediankids = median(h_nkids_dv, na.rm = TRUE)
+  )
+Aggr1
+
+```
+The reason why there may be a mean of 0.6 kids (rounded to 1 decimal place) with the ethnically endogamous White British couples is because there is a large amount of White British couples that have zero children. This is also the reason why the median kids of White British couples is zero. More than half of White British couples have zero children. If we were to remove data where couples had zero children, and to only keep the data where couples have one or more children, this would change the results of the data table produced. Ethnically endogamous White British couples are more likely to have less children than ethnically endogamous Indian or Pakistani couples. Although, we can also see from the data results that Pakistani couples are more likely to have more children than Indian couples. 
+
+
+
+
+
